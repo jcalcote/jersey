@@ -50,6 +50,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.Spliterator;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
 import javax.inject.Inject;
@@ -78,6 +79,9 @@ final class EntityInspectorImpl implements EntityInspector {
     private final List<EntityProcessor> entityProcessors;
 
     @Inject
+    private InspectionCache inspectionCache;
+
+    @Inject
     private EntityGraphProvider graphProvider;
 
     /**
@@ -94,24 +98,26 @@ final class EntityInspectorImpl implements EntityInspector {
 
     @Override
     public void inspect(final Class<?> entityClass, final boolean forWriter) {
-        if (!graphProvider.containsEntityGraph(entityClass, forWriter)) {
-            final EntityGraph graph = graphProvider.getOrCreateEntityGraph(entityClass, forWriter);
-            final Set<Class<?>> inspect = new HashSet<>();
+        Stream.concat(Stream.of(entityClass), inspectionCache.getSubTypes(entityClass).stream()).forEach(cls -> {
+            if (!graphProvider.containsEntityGraph(entityClass, forWriter)) {
+                final EntityGraph graph = graphProvider.getOrCreateEntityGraph(entityClass, forWriter);
+                final Set<Class<?>> inspect = new HashSet<>();
 
-            // Class.
-            if (!inspectEntityClass(entityClass, graph, forWriter)) {
-                // Properties.
-                final Map<String, Method> unmatchedAccessors = inspectEntityProperties(entityClass, graph, inspect, forWriter);
+                // Class.
+                if (!inspectEntityClass(entityClass, graph, forWriter)) {
+                    // Properties.
+                    final Map<String, Method> unmatchedAccessors = inspectEntityProperties(entityClass, graph, inspect, forWriter);
 
-                // Setters/Getters without fields.
-                inspectStandaloneAccessors(unmatchedAccessors, graph, forWriter);
+                    // Setters/Getters without fields.
+                    inspectStandaloneAccessors(unmatchedAccessors, graph, forWriter);
 
-                // Inspect new classes.
-                for (final Class<?> clazz : inspect) {
-                    inspect(clazz, forWriter);
+                    // Inspect new classes.
+                    for (final Class<?> clazz : inspect) {
+                        inspect(clazz, forWriter);
+                    }
                 }
             }
-        }
+        });
     }
 
     /**
